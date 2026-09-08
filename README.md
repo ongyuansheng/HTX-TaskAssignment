@@ -14,6 +14,7 @@ Create your local backend environment file if it does not already exist:
 
 ```bash
 cp backend/.env.example backend/.env
+cp frontend/.env.example frontend/.env
 ```
 
 Start PostgreSQL:
@@ -73,9 +74,10 @@ This recreates only the container; the named database volume is preserved.
 
 
 ```text
-Client → Express routes → Task service → Prisma repository → PostgreSQL
+React client → Express routes → Task service → Prisma repository → PostgreSQL
 ```
 
+- **React client** displays tasks, creates tasks, and sends assignment/status changes to the API.
 - **Routes** validate HTTP input and return JSON responses.
 - **Task service** contains the assignment rule: a developer must have every skill required by a task.
 - **Prisma repository** performs the PostgreSQL queries, keeping database details out of the business-rule code.
@@ -126,6 +128,17 @@ Update an assignee and/or status:
 
 The API returns `400 Bad Request` for invalid input, missing skills, or an incompatible assignment. It returns `404 Not Found` when a requested task, developer, or skill does not exist.
 
+## Frontend
+
+Start the backend and frontend in separate terminals:
+
+```bash
+npm run dev:backend
+npm run dev:frontend
+```
+
+Open `http://localhost:5173`. The Task List page follows the provided wireframe: it lists each task's title and skills, and has inline dropdowns for status and assignee. Only developers with every required skill are offered in the assignee dropdown. The Create Task page lets users enter a title and choose required skills; tasks can be assigned later.
+
 ## Key libraries
 
 | Library | Why it is used |
@@ -136,6 +149,11 @@ The API returns `400 Bad Request` for invalid input, missing skills, or an incom
 | Docker Compose | Starts a repeatable local PostgreSQL database. |
 | TypeScript + tsx | Type-safe backend code with a simple development runner. |
 | Vitest + Supertest | Tests the task-assignment rule and Express health endpoint. |
+| React Testing Library | Tests frontend behaviour such as form submission and assignment choices without testing styling. |
+| React + Vite | A small TypeScript single-page application with a fast development server and build process. |
+| TanStack Query | Fetches tasks, developers, and skills, and refreshes task data after changes. |
+| React Hook Form + Zod | Keeps the create-task form and its title validation concise. |
+| Tailwind CSS | Provides the small, responsive visual layer without adding a component library. |
 | CORS | Allows the future frontend, running on another local port, to call the API. |
 | Helmet | Adds standard HTTP security headers with minimal configuration. |
 
@@ -144,6 +162,8 @@ The API returns `400 Bad Request` for invalid input, missing skills, or an incom
 ```bash
 npm run typecheck --workspace backend
 npm test --workspace backend
+npm test --workspace frontend
+npm run build --workspace frontend
 ```
 
-The tests cover valid task assignment, rejected incompatible assignment, task-status changes, and the health endpoint.
+The backend tests cover valid task assignment, rejected incompatible assignment, task-status changes, and the health endpoint. The frontend tests cover compatible assignee choices, status updates, title validation, and task creation requests.
