@@ -68,3 +68,82 @@ docker compose up -d --force-recreate postgres
 ```
 
 This recreates only the container; the named database volume is preserved.
+
+## System design
+
+
+```text
+Client → Express routes → Task service → Prisma repository → PostgreSQL
+```
+
+- **Routes** validate HTTP input and return JSON responses.
+- **Task service** contains the assignment rule: a developer must have every skill required by a task.
+- **Prisma repository** performs the PostgreSQL queries, keeping database details out of the business-rule code.
+- **PostgreSQL** stores developers, tasks, skills, and the two many-to-many relationships.
+
+This separation keeps the important rule easy to test without using a real database.
+
+## Backend API
+
+Start the API:
+
+```bash
+npm run dev --workspace backend
+```
+
+The API runs at `http://localhost:3000`.
+
+| Method | Route | Purpose |
+| --- | --- | --- |
+| `GET` | `/health` | Health check |
+| `POST` | `/tasks` | Create a task with required skill IDs |
+| `GET` | `/tasks` | List tasks |
+| `GET` | `/tasks/:id` | Read a task |
+| `PATCH` | `/tasks/:id` | Update assignee and/or status |
+| `GET` | `/developers` | List developers and skills |
+| `GET` | `/developers/:id` | Read a developer and assigned tasks |
+| `GET` | `/skills` | List skills |
+| `GET` | `/skills/:id` | Read a skill and related records |
+
+Create a task:
+
+```json
+{
+  "title": "Build a responsive homepage",
+  "requiredSkillIds": ["frontend-skill-uuid"],
+  "status": "TODO"
+}
+```
+
+Update an assignee and/or status:
+
+```json
+{
+  "assignedDeveloperId": "developer-uuid",
+  "status": "IN_PROGRESS"
+}
+```
+
+The API returns `400 Bad Request` for invalid input, missing skills, or an incompatible assignment. It returns `404 Not Found` when a requested task, developer, or skill does not exist.
+
+## Key libraries
+
+| Library | Why it is used |
+| --- | --- |
+| Express | Small, familiar Node.js framework for the REST API. |
+| Prisma + PostgreSQL driver | Type-safe database queries, migrations, and seeding for PostgreSQL. |
+| Zod | Validates request bodies before database work is performed. |
+| Docker Compose | Starts a repeatable local PostgreSQL database. |
+| TypeScript + tsx | Type-safe backend code with a simple development runner. |
+| Vitest + Supertest | Tests the task-assignment rule and Express health endpoint. |
+| CORS | Allows the future frontend, running on another local port, to call the API. |
+| Helmet | Adds standard HTTP security headers with minimal configuration. |
+
+## Verification
+
+```bash
+npm run typecheck --workspace backend
+npm test --workspace backend
+```
+
+The tests cover valid task assignment, rejected incompatible assignment, task-status changes, and the health endpoint.
