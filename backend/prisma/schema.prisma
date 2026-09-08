@@ -1,0 +1,57 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Developer {
+  id              String           @id @default(uuid()) @db.Uuid
+  name            String           @unique
+  assignedTasks   Task[]
+  developerSkills DeveloperSkill[]
+}
+
+model Task {
+  id                  String      @id @default(uuid()) @db.Uuid
+  title               String
+  status              TaskStatus  @default(TODO)
+  assignedDeveloperId String?     @db.Uuid
+  assignedDeveloper   Developer?  @relation(fields: [assignedDeveloperId], references: [id])
+  requiredSkills      TaskSkill[]
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
+}
+
+model Skill {
+  id              String           @id @default(uuid()) @db.Uuid
+  name            String           @unique
+  developerSkills DeveloperSkill[]
+  taskSkills      TaskSkill[]
+}
+
+model DeveloperSkill {
+  developerId String    @db.Uuid
+  skillId     String    @db.Uuid
+  developer   Developer @relation(fields: [developerId], references: [id], onDelete: Cascade)
+  skill       Skill     @relation(fields: [skillId], references: [id], onDelete: Cascade)
+
+  @@id([developerId, skillId])
+}
+
+model TaskSkill {
+  taskId String @db.Uuid
+  skillId String @db.Uuid
+  task   Task   @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  skill  Skill  @relation(fields: [skillId], references: [id], onDelete: Cascade)
+
+  @@id([taskId, skillId])
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  DONE
+}

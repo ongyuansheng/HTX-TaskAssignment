@@ -1,0 +1,12 @@
+{
+  "name": "htx-task-assignment",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "backend"
+  ],
+  "scripts": {
+    "db:up": "docker compose up -d postgres",
+    "db:down": "docker compose down"
+  }
+}
