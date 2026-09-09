@@ -2,12 +2,21 @@ import { Router } from "express";
 import { z } from "zod";
 import { Prisma } from "../../generated/prisma/client.js";
 import { HttpError } from "../errors.js";
+import { logger } from "../lib/logger.js";
 import { prisma } from "../lib/prisma.js";
 import { PrismaTaskRepository } from "../repositories/prisma-task-repository.js";
+import { GeminiSkillClassifier } from "../services/gemini-skill-classifier.js";
 import { TaskService, validateNewTaskStatuses } from "../services/task-service.js";
+import {
+  identifyMissingSkills,
+  supportedSkillNames,
+  type SkillName,
+  type TaskCreationInput,
+} from "../services/task-skill-service.js";
 
 const router = Router();
 const taskService = new TaskService(new PrismaTaskRepository());
+const skillClassifier = new GeminiSkillClassifier();
 
 const statusSchema = z.enum(["TODO", "IN_PROGRESS", "DONE"]);
 const skillIdsSchema = z
@@ -16,14 +25,7 @@ const skillIdsSchema = z
     message: "requiredSkillIds must not contain duplicates",
   });
 
-type CreateTaskInput = {
-  title: string;
-  status: "TODO" | "IN_PROGRESS" | "DONE";
-  requiredSkillIds: string[];
-  subtasks: CreateTaskInput[];
-};
-
-const createTaskSchema: z.ZodType<CreateTaskInput> = z.object({
+const createTaskSchema: z.ZodType<TaskCreationInput> = z.object({
   title: z.string().trim().min(1, "title is required"),
   status: statusSchema.default("TODO"),
   requiredSkillIds: skillIdsSchema.default([]),
@@ -133,14 +135,14 @@ function buildTaskTree(tasks: TaskWithDetails[]) {
   return rootTasks;
 }
 
-function collectSkillIds(task: CreateTaskInput): string[] {
+function collectSkillIds(task: TaskCreationInput): string[] {
   return [
     ...task.requiredSkillIds,
     ...task.subtasks.flatMap((subtask) => collectSkillIds(subtask)),
   ];
 }
 
-async function ensureSkillsExist(task: CreateTaskInput) {
+async function ensureSkillsExist(task: TaskCreationInput) {
   const skillIds = [...new Set(collectSkillIds(task))];
 
   if (skillIds.length === 0) {
@@ -156,7 +158,17 @@ async function ensureSkillsExist(task: CreateTaskInput) {
   }
 }
 
-function buildTaskData(task: CreateTaskInput): Prisma.TaskCreateInput {
+async function getSkillIdsByName() {
+  // Gemini returns skill names; task relations store database IDs.
+  const skills = await prisma.skill.findMany({
+    where: { name: { in: [...supportedSkillNames] } },
+    select: { id: true, name: true },
+  });
+
+  return new Map(skills.map((skill) => [skill.name as SkillName, skill.id]));
+}
+
+function buildTaskData(task: TaskCreationInput): Prisma.TaskCreateInput {
   return {
     title: task.title,
     status: task.status,
@@ -192,13 +204,21 @@ async function findTaskWithDirectSubtasks(taskId: string) {
 
 router.post("/", async (request, response) => {
   const input = parseCreateTask(request.body);
+
+  // Reject invalid input before querying the LLM or writing to the database.
   validateNewTaskStatuses(input);
   await ensureSkillsExist(input);
+  const taskWithSkills = await identifyMissingSkills(
+    input,
+    await getSkillIdsByName(),
+    skillClassifier,
+  );
 
   const task = await prisma.task.create({
-    data: buildTaskData(input),
+    data: buildTaskData(taskWithSkills),
   });
 
+  logger.info("task_created", { taskId: task.id });
   response.status(201).json(await findTaskWithDirectSubtasks(task.id));
 });
 
