@@ -21,8 +21,14 @@ model Task {
   assignedDeveloperId String?     @db.Uuid
   assignedDeveloper   Developer?  @relation(fields: [assignedDeveloperId], references: [id])
   requiredSkills      TaskSkill[]
+  // A subtask is a Task with a parent task, so every level shares the same fields.
+  parentTaskId        String?     @db.Uuid
+  parentTask          Task?       @relation("TaskHierarchy", fields: [parentTaskId], references: [id], onDelete: Cascade)
+  subtasks            Task[]      @relation("TaskHierarchy")
   createdAt           DateTime    @default(now())
   updatedAt           DateTime    @updatedAt
+
+  @@index([parentTaskId])
 }
 
 model Skill {

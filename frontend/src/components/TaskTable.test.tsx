@@ -20,6 +20,8 @@ const task: Task = {
   status: "TODO",
   assignedDeveloper: null,
   requiredSkills: [frontendSkill, backendSkill],
+  parentTaskId: null,
+  subtasks: [],
   createdAt: "2026-09-08T00:00:00.000Z",
   updatedAt: "2026-09-08T00:00:00.000Z",
 };

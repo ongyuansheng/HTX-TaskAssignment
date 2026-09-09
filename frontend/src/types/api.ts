@@ -17,6 +17,8 @@ export type Task = {
   status: TaskStatus;
   assignedDeveloper: Pick<Developer, "id" | "name"> | null;
   requiredSkills: Skill[];
+  parentTaskId: string | null;
+  subtasks: Task[];
   createdAt: string;
   updatedAt: string;
 };
@@ -24,6 +26,15 @@ export type Task = {
 export type CreateTaskInput = {
   title: string;
   requiredSkillIds: string[];
+  subtasks: CreateTaskInput[];
+};
+
+// localId exists only while the nested form is being edited in the browser.
+export type TaskDraft = {
+  localId: string;
+  title: string;
+  requiredSkillIds: string[];
+  subtasks: TaskDraft[];
 };
 
 export type UpdateTaskInput = {

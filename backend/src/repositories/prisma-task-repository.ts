@@ -13,6 +13,9 @@ export class PrismaTaskRepository implements TaskRepository {
         requiredSkills: {
           select: { skillId: true },
         },
+        subtasks: {
+          select: { status: true },
+        },
       },
     });
 
@@ -24,7 +27,9 @@ export class PrismaTaskRepository implements TaskRepository {
       id: task.id,
       status: task.status,
       assignedDeveloperId: task.assignedDeveloperId,
+      parentTaskId: task.parentTaskId,
       requiredSkillIds: task.requiredSkills.map((requiredSkill) => requiredSkill.skillId),
+      subtaskStatuses: task.subtasks.map((subtask) => subtask.status),
     };
   }
 
