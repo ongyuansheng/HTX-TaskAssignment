@@ -1,57 +1,68 @@
 # HTX Task Assignment
 
-## Run the full application with Docker
+A full-stack task-assignment application built with React, Express, PostgreSQL, Prisma, and Gemini.
 
-The only requirement is [Docker Desktop](https://www.docker.com/products/docker-desktop/). Node.js, npm, PostgreSQL, migrations, the seed data, and the frontend build are all handled by Docker Compose.
+It supports task creation, nested subtasks, developer assignment based on required skills, task statuses, and automatic skill identification for tasks without selected skills.
 
-From the repository root, run:
+## Run with Docker
 
-```bash
-docker compose up --build
-```
+Requirements:
 
-Then open `http://localhost:5173`.
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/)
+- A Gemini API key to test automatic skill identification
 
-| Service    | Address                   | What it does                                      |
-| ---------- | ------------------------- | ------------------------------------------------- |
-| Frontend   | `http://localhost:5173` | React application, served by Nginx.               |
-| Backend    | `http://localhost:3000` | Express API.`GET /health` confirms it is ready. |
-| PostgreSQL | `localhost:5432`        | Persistent database used by the backend.          |
-
-The backend waits for PostgreSQL to become healthy, applies all committed Prisma migrations, and runs the safe-to-repeat seed automatically. The initial data includes Alice, Bob, Carol, Dave, Frontend, and Backend.
-
-To enable automatic LLM skill identification, add your Gemini key to `backend/.env` before starting Docker Compose:
+From the repository root:
 
 ```bash
 cp backend/.env.example backend/.env
+docker compose up --build
 ```
 
-Then edit `backend/.env` and set `GEMINI_API_KEY=your_api_key`.
+Open the application at `http://localhost:5173`.
 
-The application still starts without the key. Tasks with user-selected skills work normally; creating a task with no skills returns a clear configuration error until a key is provided.
+| Service    | Address                   | Purpose                       |
+| ---------- | ------------------------- | ----------------------------- |
+| Frontend   | `http://localhost:5173` | React single-page application |
+| Backend    | `http://localhost:3000` | Express API                   |
+| PostgreSQL | `localhost:5432`        | Application database          |
 
-Stop the stack with:
+Docker starts PostgreSQL, applies Prisma migrations, seeds the database, builds the frontend, and starts the API.
 
-```bash
-docker compose down
+The seed data includes Alice (Frontend), Bob (Backend), Carol (Frontend and Backend), and Dave (Backend).
+
+### Gemini configuration
+
+Add a Gemini API key to the uncommitted `backend/.env` file:
+
+```text
+GEMINI_API_KEY=your_api_key
+GEMINI_MODEL=gemini-3.6-flash
 ```
 
-The PostgreSQL named volume is preserved. To remove all local database data as well, run `docker compose down -v`.
+Do not commit `backend/.env` or expose the key to the frontend.
 
-View backend logs, including task creation and Gemini skill-identification events:
+The application starts without a Gemini key. Tasks with manually selected skills still work, but creating a task without skills returns a clear configuration error.
+
+### Useful Docker commands
 
 ```bash
 docker compose logs -f backend
+docker compose down
 ```
 
-## Local development without Docker
+To also remove local PostgreSQL data:
+
+```bash
+docker compose down -v
+```
+
+## Local development
 
 Requirements: Node.js, npm, and Docker Desktop.
 
 ```bash
 npm install
 cp backend/.env.example backend/.env
-cp frontend/.env.example frontend/.env
 docker compose up -d postgres
 ```
 
@@ -62,93 +73,74 @@ npm run dev:backend
 npm run dev:frontend
 ```
 
-For a local backend, add `GEMINI_API_KEY` to `backend/.env` if you want automatic skill identification.
+The frontend runs at `http://localhost:5173` and uses `http://localhost:3000` as its default API URL.
 
-## Prisma workflow
+## Features and business rules
 
-Validate the schema, apply a new migration during development, and regenerate the client:
-
-```bash
-npm run prisma:validate --workspace backend
-npm run prisma:migrate --workspace backend -- --name describe-your-change
-npm run prisma:generate --workspace backend
-```
-
-The seed is safe to run more than once:
-
-```bash
-npm exec --workspace backend -- prisma db seed
-```
-
-The task hierarchy migration adds a nullable `parentTaskId` column. Existing tasks need no backfill: they remain root tasks because their parent ID is `null`.
-
-## Verify the database
-
-```bash
-npm exec --workspace backend -- prisma migrate status
-npm run prisma:studio --workspace backend
-```
-
-Prisma Studio is available at `http://localhost:5555` while it is running.
+- A task can require Frontend, Backend, or both skills.
+- A task can only be assigned to a developer who has every required skill.
+- Tasks can contain nested subtasks.
+- A task can only be marked `DONE` when all of its direct subtasks are `DONE`.
+- Reopening a subtask also reopens completed parent tasks.
+- Required skills are optional when creating a task or subtask.
+- When skills are not selected, the backend uses Gemini to identify them from the title.
+- User-selected skills are preserved and are not sent to Gemini.
 
 ## System design
 
-```text
-Browser → Nginx → React client → Express routes → Task service → Prisma repository → PostgreSQL
-                                                └→ Gemini API (only for tasks without skills)
+```mermaid
+flowchart LR
+  Browser --> Frontend[Nginx + React]
+  Frontend --> Backend[Express API]
+  Backend --> Database[(PostgreSQL)]
+  Backend --> Gemini[Gemini API]
+  Gemini -. only when skills are missing .-> Backend
 ```
 
-- **React client** displays tasks, creates tasks, and sends assignment/status changes to the API.
-- **Routes** validate HTTP input, identify missing task skills with Gemini, and return JSON responses.
-- **Task service** contains the assignment rule: a developer must have every skill required by a task.
-- **Prisma repository** performs the PostgreSQL queries, keeping database details out of the business-rule code.
-- **PostgreSQL** stores developers, tasks, skills, the two many-to-many relationships, and the task/subtask hierarchy.
-- **Docker Compose** runs the three application services together and connects them on a private Docker network.
+- **React** displays tasks and provides forms for task creation, nested subtasks, assignment, and status updates.
+- **Express routes** validate requests and return JSON responses.
+- **Task service** contains the assignment and status business rules.
+- **Prisma** provides typed database access, migrations, and seeding.
+- **Gemini** identifies skills only when the user has not selected any.
+- **Docker Compose** runs the frontend, backend, and PostgreSQL together.
 
-The LLM integration sits behind a small `SkillClassifier` interface. Tests use a fake classifier instead of calling Gemini, so they remain reliable and do not need an API key.
+The Gemini integration is behind a small `SkillClassifier` interface. Tests use a fake classifier instead of calling Gemini, so they stay reliable and do not need an API key.
 
-## Backend API
+## API
 
-Start the API:
+The backend API runs at `http://localhost:3000`.
 
-```bash
-npm run dev --workspace backend
-```
+| Method    | Route               | Description                          |
+| --------- | ------------------- | ------------------------------------ |
+| `GET`   | `/health`         | Health check                         |
+| `GET`   | `/tasks`          | List root tasks and nested subtasks  |
+| `POST`  | `/tasks`          | Create a task and nested subtasks    |
+| `GET`   | `/tasks/:id`      | Get one task                         |
+| `PATCH` | `/tasks/:id`      | Update task assignee and/or status   |
+| `GET`   | `/developers`     | List developers and their skills     |
+| `GET`   | `/developers/:id` | Get one developer and assigned tasks |
+| `GET`   | `/skills`         | List skills                          |
+| `GET`   | `/skills/:id`     | Get one skill and related records    |
 
-The API runs at `http://localhost:3000`.
-
-| Method    | Route               | Purpose                                    |
-| --------- | ------------------- | ------------------------------------------ |
-| `GET`   | `/health`         | Health check                               |
-| `POST`  | `/tasks`          | Create a task and nested subtasks          |
-| `GET`   | `/tasks`          | List root tasks with their nested subtasks |
-| `GET`   | `/tasks/:id`      | Read a task                                |
-| `PATCH` | `/tasks/:id`      | Update assignee and/or status              |
-| `GET`   | `/developers`     | List developers and skills                 |
-| `GET`   | `/developers/:id` | Read a developer and assigned tasks        |
-| `GET`   | `/skills`         | List skills                                |
-| `GET`   | `/skills/:id`     | Read a skill and related records           |
-
-Create a task:
+### Create a task
 
 ```json
 {
   "title": "Build a responsive homepage",
   "requiredSkillIds": ["frontend-skill-uuid"],
-  "status": "TODO",
   "subtasks": [
     {
       "title": "Build the navigation component",
-      "requiredSkillIds": ["frontend-skill-uuid"],
+      "requiredSkillIds": [],
       "subtasks": []
     }
   ]
 }
 ```
 
-`requiredSkillIds` is optional for every task and subtask. When it is empty, the backend asks Gemini to identify `Frontend`, `Backend`, or both from the title before saving the task tree. User-selected skills are preserved and are not sent to Gemini.
+`requiredSkillIds` is optional for every task and subtask. An empty array triggers automatic skill identification on the backend.
 
-Update an assignee and/or status:
+### Update a task
 
 ```json
 {
@@ -157,48 +149,54 @@ Update an assignee and/or status:
 }
 ```
 
-The API returns `400 Bad Request` for invalid input, missing skills, an incompatible assignment, or creating or updating a task as `DONE` before all of its direct subtasks are `DONE`. It returns `502 Bad Gateway` if Gemini cannot identify skills, and does not create the task. Reopening a subtask automatically changes any completed parent tasks to `IN_PROGRESS`. It returns `404 Not Found` when a requested task, developer, or skill does not exist.
+The API returns:
 
-## Frontend
+- `400 Bad Request` for invalid input, invalid status changes, missing skills, or incompatible developer assignment.
+- `404 Not Found` when a task, developer, or skill does not exist.
+- `502 Bad Gateway` when Gemini cannot identify skills.
+- `503 Service Unavailable` when Gemini skill identification is not configured.
 
-Start the backend and frontend in separate terminals:
+## Database and Prisma
+
+Validate the schema:
 
 ```bash
-npm run dev:backend
-npm run dev:frontend
+npm run prisma:validate --workspace backend
 ```
 
-Open `http://localhost:5173`. The Task List page follows the provided wireframe: it lists each task's title and skills, with nested subtasks indented below their parent. It has inline dropdowns for status and assignee. Only developers with every required skill are offered in the assignee dropdown. The Create Task page lets users add subtasks at any level, choose skills for each one, or leave skills empty for automatic identification.
+Create and apply a migration during development:
 
-## Gemini setup
-
-Create an API key in [Google AI Studio](https://aistudio.google.com/app/apikey), then add it to your uncommitted `backend/.env` file:
-
-```text
-GEMINI_API_KEY=your_api_key
-GEMINI_MODEL=gemini-3.6-flash
+```bash
+npm run prisma:migrate --workspace backend -- --name describe-your-change
 ```
 
-`gemini-3.6-flash` is the configured default, but the model is environment-based so it can be changed without code changes. The key is used only by the backend and must never be added to the repository or exposed to the frontend.
+Open Prisma Studio:
 
-## Key libraries
+```bash
+npm run prisma:studio --workspace backend
+```
 
-| Library                           | Why it is used                                                                                   |
-| --------------------------------- | ------------------------------------------------------------------------------------------------ |
-| Express                           | Small, familiar Node.js framework for the REST API.                                              |
-| Prisma + PostgreSQL driver        | Type-safe database queries, migrations, and seeding for PostgreSQL.                              |
-| Zod                               | Validates request bodies before database work is performed.                                      |
-| Docker Compose                    | Starts a repeatable local PostgreSQL database.                                                   |
-| TypeScript + tsx                  | Type-safe backend code with a simple development runner.                                         |
-| Vitest + Supertest                | Tests the task-assignment rule and Express health endpoint.                                      |
-| React Testing Library             | Tests frontend behaviour such as form submission and assignment choices without testing styling. |
-| React + Vite                      | A small TypeScript single-page application with a fast development server and build process.     |
-| TanStack Query                    | Fetches tasks, developers, and skills, and refreshes task data after changes.                    |
-| Zod                               | Validates the recursive task payload before the create form sends it.                            |
-| Tailwind CSS                      | Provides the small, responsive visual layer without adding a component library.                  |
-| CORS                              | Allows the future frontend, running on another local port, to call the API.                      |
-| Helmet                            | Adds standard HTTP security headers with minimal configuration.                                  |
-| Native`fetch` + Gemini REST API | Calls Gemini without another backend SDK; the response is validated before it is used.           |
+Run the safe-to-repeat seed manually:
+
+```bash
+npm exec --workspace backend -- prisma db seed
+```
+
+## Key dependencies
+
+| Dependency                        | Reason                                                                                     |
+| --------------------------------- | ------------------------------------------------------------------------------------------ |
+| React + Vite                      | Small TypeScript single-page application with fast local development and production builds |
+| Express                           | Simple, familiar Node.js HTTP API                                                          |
+| Prisma + PostgreSQL               | Typed database access, migrations, and seed support                                        |
+| Zod                               | Validates API requests and recursive task payloads before database work                    |
+| TanStack Query                    | Fetches API data and refreshes task data after changes                                     |
+| Vitest + Supertest                | Tests business rules and API behaviour                                                     |
+| React Testing Library             | Tests frontend behaviour without coupling tests to visual styling                          |
+| Tailwind CSS                      | Provides a small responsive UI without a component library                                 |
+| Docker Compose                    | Runs the frontend, backend, and database consistently                                      |
+| Gemini REST API | Calls Gemini's endpoint to run LLM skill classification                                              |
+| Helmet and CORS                   | Adds basic security headers and browser access for local development                       |
 
 ## Verification
 
@@ -207,6 +205,8 @@ npm run typecheck --workspace backend
 npm test --workspace backend
 npm test --workspace frontend
 npm run build --workspace frontend
+npm run prisma:validate --workspace backend
+docker compose up --build
 ```
 
-The backend tests cover valid task assignment, status rules, LLM skill identification with a fake classifier, Gemini response validation, and failure handling. The frontend tests cover compatible assignee choices, status updates, title validation, and flat/nested task creation requests, including submitting a task without skills for backend identification.
+The backend tests cover assignment compatibility, status rules, LLM skill identification, Gemini response validation, and error handling. The frontend tests cover task creation, nested subtasks, validation, assignment choices, and submission without selected skills.
