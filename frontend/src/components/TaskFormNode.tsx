@@ -21,7 +21,7 @@ export function TaskFormNode({
 }: TaskFormNodeProps) {
   const isRootTask = depth === 0;
   const titleLabel = isRootTask ? "Task title" : "Subtask title";
-  const skillsLabel = isRootTask ? "Required skills" : "Required subtask skills";
+  const skillsLabel = isRootTask ? "Required skills (optional)" : "Required subtask skills (optional)";
 
   function toggleSkill(skillId: string) {
     const requiredSkillIds = task.requiredSkillIds.includes(skillId)
@@ -69,6 +69,9 @@ export function TaskFormNode({
 
       <fieldset className="mt-5">
         <legend className="text-sm font-semibold text-slate-800">{skillsLabel}</legend>
+        <p className="mt-1 text-xs text-slate-500">
+          Leave this empty to identify the skills automatically.
+        </p>
         <div className="mt-3 grid gap-2 sm:grid-cols-2">
           {skills.map((skill) => (
             <label

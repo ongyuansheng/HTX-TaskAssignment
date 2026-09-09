@@ -25,6 +25,7 @@ type TaskRow = {
   depth: number;
 };
 
+// The API returns a tree; the table needs one row per task.
 function flattenTasks(tasks: Task[], depth = 0): TaskRow[] {
   return tasks.flatMap((task) => [
     { task, depth },

@@ -71,6 +71,33 @@ describe("CreateTaskPage", () => {
     });
   });
 
+  it("allows the backend to identify skills when none are selected", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(skills))
+      .mockResolvedValueOnce(jsonResponse({ id: "task-1" }, 201));
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderWithProviders(<CreateTaskPage />);
+
+    await screen.findByRole("checkbox", { name: "Frontend" });
+    await user.type(screen.getByLabelText("Task title"), "Build a profile page");
+    await user.click(screen.getByRole("button", { name: "Save task" }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenLastCalledWith("http://localhost:3000/tasks", {
+        method: "POST",
+        body: JSON.stringify({
+          title: "Build a profile page",
+          requiredSkillIds: [],
+          subtasks: [],
+        }),
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+  });
+
   it("creates a task with nested subtasks in one request", async () => {
     const user = userEvent.setup();
     const fetchMock = vi

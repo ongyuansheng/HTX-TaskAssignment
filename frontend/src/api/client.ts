@@ -1,3 +1,4 @@
+// Vite supplies this at build time so Docker and local development can use different API URLs.
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3000";
 
 type ApiErrorResponse = {

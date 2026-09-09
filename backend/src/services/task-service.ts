@@ -32,6 +32,7 @@ export function validateNewTaskStatuses(task: TaskForCreation) {
 }
 
 export interface TaskRepository {
+  // This boundary lets task rules run in tests without a database.
   findTaskById(id: string): Promise<TaskForUpdate | null>;
   findDeveloperById(id: string): Promise<DeveloperForAssignment | null>;
   saveTask(task: TaskForUpdate): Promise<TaskForUpdate>;

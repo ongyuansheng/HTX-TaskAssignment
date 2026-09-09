@@ -26,6 +26,7 @@ const createTaskSchema: z.ZodType<CreateTaskInput> = z.object({
   subtasks: z.array(z.lazy(() => createTaskSchema)),
 });
 
+// Replace one node while preserving the rest of the nested draft tree.
 function updateTaskDraft(
   task: TaskDraft,
   taskId: string,
@@ -118,6 +119,7 @@ export function CreateTaskPage() {
           onAddSubtask={() => addSubtask(task.localId)}
           onRemove={() => removeSubtask(task.localId)}
         />
+        {/* Render children after their parent to keep each form card full width. */}
         {task.subtasks.map((subtask) => renderTaskForm(subtask, depth + 1, task.title))}
       </Fragment>
     );
@@ -146,7 +148,7 @@ export function CreateTaskPage() {
         <p className="text-sm font-medium text-blue-700">Task Assignment</p>
         <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900">Create task(s)</h1>
         <p className="mt-2 text-sm text-slate-600">
-          Add subtasks at any level. Every task and subtask can have its own required skills.
+          Add subtasks at any level. Leave skills empty to identify them automatically.
         </p>
 
         <form
