@@ -6,13 +6,30 @@ export type TaskForUpdate = {
   id: string;
   status: TaskStatus;
   assignedDeveloperId: string | null;
+  parentTaskId: string | null;
   requiredSkillIds: string[];
+  subtaskStatuses: TaskStatus[];
 };
 
 export type DeveloperForAssignment = {
   id: string;
   skillIds: string[];
 };
+
+export type TaskForCreation = {
+  status: TaskStatus;
+  subtasks: TaskForCreation[];
+};
+
+export function validateNewTaskStatuses(task: TaskForCreation) {
+  if (task.status === "DONE" && task.subtasks.some((subtask) => subtask.status !== "DONE")) {
+    throw new HttpError(400, "A task cannot be marked as done until all subtasks are done");
+  }
+
+  for (const subtask of task.subtasks) {
+    validateNewTaskStatuses(subtask);
+  }
+}
 
 export interface TaskRepository {
   findTaskById(id: string): Promise<TaskForUpdate | null>;
@@ -51,8 +68,36 @@ export class TaskService {
 
   async changeStatus(taskId: string, status: TaskStatus) {
     const task = await this.getTask(taskId);
+
+    // Checking direct children is enough: each child must pass this same rule too.
+    if (status === "DONE" && task.subtaskStatuses.some((subtaskStatus) => subtaskStatus !== "DONE")) {
+      throw new HttpError(400, "A task cannot be marked as done until all subtasks are done");
+    }
+
     task.status = status;
-    return this.repository.saveTask(task);
+    const updatedTask = await this.repository.saveTask(task);
+
+    if (status !== "DONE") {
+      await this.reopenDoneParents(task.parentTaskId);
+    }
+
+    return updatedTask;
+  }
+
+  private async reopenDoneParents(parentTaskId: string | null) {
+    let currentParentId = parentTaskId;
+
+    // A reopened child means every completed ancestor is no longer complete.
+    while (currentParentId) {
+      const parent = await this.getTask(currentParentId);
+
+      if (parent.status === "DONE") {
+        parent.status = "IN_PROGRESS";
+        await this.repository.saveTask(parent);
+      }
+
+      currentParentId = parent.parentTaskId;
+    }
   }
 
   private async getTask(taskId: string) {

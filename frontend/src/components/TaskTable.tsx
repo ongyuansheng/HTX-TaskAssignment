@@ -20,6 +20,18 @@ function isCompatible(task: Task, developer: Developer) {
   );
 }
 
+type TaskRow = {
+  task: Task;
+  depth: number;
+};
+
+function flattenTasks(tasks: Task[], depth = 0): TaskRow[] {
+  return tasks.flatMap((task) => [
+    { task, depth },
+    ...flattenTasks(task.subtasks, depth + 1),
+  ]);
+}
+
 export function TaskTable({ tasks, developers }: TaskTableProps) {
   const queryClient = useQueryClient();
   const [updateError, setUpdateError] = useState<string | null>(null);
@@ -48,6 +60,8 @@ export function TaskTable({ tasks, developers }: TaskTableProps) {
     );
   }
 
+  const taskRows = flattenTasks(tasks);
+
   return (
     <>
       {updateError ? (
@@ -67,12 +81,17 @@ export function TaskTable({ tasks, developers }: TaskTableProps) {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-200">
-            {tasks.map((task) => {
+            {taskRows.map(({ task, depth }) => {
               const compatibleDevelopers = developers.filter((developer) => isCompatible(task, developer));
 
               return (
                 <tr key={task.id} className="align-top">
-                  <td className="max-w-md px-6 py-5 text-sm font-medium leading-6 text-slate-900">{task.title}</td>
+                  <td className="max-w-md px-6 py-5 text-sm font-medium leading-6 text-slate-900">
+                    <span style={{ paddingLeft: `${depth * 20}px` }}>
+                      {depth > 0 ? "↳ " : ""}
+                      {task.title}
+                    </span>
+                  </td>
                   <td className="px-6 py-5">
                     <div className="flex max-w-xs flex-wrap gap-2">
                       {task.requiredSkills.length === 0 ? (

@@ -44,6 +44,8 @@ npm exec --workspace backend -- prisma db seed
 
 The seed is safe to run more than once; it does not create duplicate records.
 
+The task hierarchy migration adds a nullable `parentTaskId` column. Existing tasks need no backfill: they remain root tasks because their parent ID is `null`.
+
 ## Verify the database
 
 Check that all migrations are applied:
@@ -81,7 +83,7 @@ React client → Express routes → Task service → Prisma repository → Postg
 - **Routes** validate HTTP input and return JSON responses.
 - **Task service** contains the assignment rule: a developer must have every skill required by a task.
 - **Prisma repository** performs the PostgreSQL queries, keeping database details out of the business-rule code.
-- **PostgreSQL** stores developers, tasks, skills, and the two many-to-many relationships.
+- **PostgreSQL** stores developers, tasks, skills, the two many-to-many relationships, and the task/subtask hierarchy.
 
 This separation keeps the important rule easy to test without using a real database.
 
@@ -98,8 +100,8 @@ The API runs at `http://localhost:3000`.
 | Method | Route | Purpose |
 | --- | --- | --- |
 | `GET` | `/health` | Health check |
-| `POST` | `/tasks` | Create a task with required skill IDs |
-| `GET` | `/tasks` | List tasks |
+| `POST` | `/tasks` | Create a task and nested subtasks |
+| `GET` | `/tasks` | List root tasks with their nested subtasks |
 | `GET` | `/tasks/:id` | Read a task |
 | `PATCH` | `/tasks/:id` | Update assignee and/or status |
 | `GET` | `/developers` | List developers and skills |
@@ -113,7 +115,14 @@ Create a task:
 {
   "title": "Build a responsive homepage",
   "requiredSkillIds": ["frontend-skill-uuid"],
-  "status": "TODO"
+  "status": "TODO",
+  "subtasks": [
+    {
+      "title": "Build the navigation component",
+      "requiredSkillIds": ["frontend-skill-uuid"],
+      "subtasks": []
+    }
+  ]
 }
 ```
 
@@ -126,7 +135,7 @@ Update an assignee and/or status:
 }
 ```
 
-The API returns `400 Bad Request` for invalid input, missing skills, or an incompatible assignment. It returns `404 Not Found` when a requested task, developer, or skill does not exist.
+The API returns `400 Bad Request` for invalid input, missing skills, an incompatible assignment, or creating or updating a task as `DONE` before all of its direct subtasks are `DONE`. Reopening a subtask automatically changes any completed parent tasks to `IN_PROGRESS`. It returns `404 Not Found` when a requested task, developer, or skill does not exist.
 
 ## Frontend
 
@@ -137,7 +146,7 @@ npm run dev:backend
 npm run dev:frontend
 ```
 
-Open `http://localhost:5173`. The Task List page follows the provided wireframe: it lists each task's title and skills, and has inline dropdowns for status and assignee. Only developers with every required skill are offered in the assignee dropdown. The Create Task page lets users enter a title and choose required skills; tasks can be assigned later.
+Open `http://localhost:5173`. The Task List page follows the provided wireframe: it lists each task's title and skills, with nested subtasks indented below their parent. It has inline dropdowns for status and assignee. Only developers with every required skill are offered in the assignee dropdown. The Create Task page lets users add subtasks at any level, choose skills for each one, and save the whole task tree at once.
 
 ## Key libraries
 
@@ -152,7 +161,7 @@ Open `http://localhost:5173`. The Task List page follows the provided wireframe:
 | React Testing Library | Tests frontend behaviour such as form submission and assignment choices without testing styling. |
 | React + Vite | A small TypeScript single-page application with a fast development server and build process. |
 | TanStack Query | Fetches tasks, developers, and skills, and refreshes task data after changes. |
-| React Hook Form + Zod | Keeps the create-task form and its title validation concise. |
+| Zod | Validates the recursive task payload before the create form sends it. |
 | Tailwind CSS | Provides the small, responsive visual layer without adding a component library. |
 | CORS | Allows the future frontend, running on another local port, to call the API. |
 | Helmet | Adds standard HTTP security headers with minimal configuration. |
@@ -166,4 +175,4 @@ npm test --workspace frontend
 npm run build --workspace frontend
 ```
 
-The backend tests cover valid task assignment, rejected incompatible assignment, task-status changes, and the health endpoint. The frontend tests cover compatible assignee choices, status updates, title validation, and task creation requests.
+The backend tests cover valid task assignment, rejected incompatible assignment, normal status changes, and the rule that blocks a parent task from becoming `DONE` too early. The frontend tests cover compatible assignee choices, status updates, title validation, and flat/nested task creation requests.

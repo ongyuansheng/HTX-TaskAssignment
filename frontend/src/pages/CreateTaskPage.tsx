@@ -1,28 +1,69 @@
-import { zodResolver } from "@hookform/resolvers/zod";
+import { Fragment, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useForm } from "react-hook-form";
 import { Link, useNavigate } from "react-router-dom";
 import { z } from "zod";
 import { getSkills } from "../api/skills";
 import { createTask } from "../api/tasks";
-import type { CreateTaskInput } from "../types/api";
+import { TaskFormNode } from "../components/TaskFormNode";
+import type { CreateTaskInput, TaskDraft } from "../types/api";
 
-const createTaskSchema = z.object({
+let nextDraftId = 0;
+
+function createEmptyTask(): TaskDraft {
+  nextDraftId += 1;
+
+  return {
+    localId: `task-draft-${nextDraftId}`,
+    title: "",
+    requiredSkillIds: [],
+    subtasks: [],
+  };
+}
+
+const createTaskSchema: z.ZodType<CreateTaskInput> = z.object({
   title: z.string().trim().min(1, "Enter a task title."),
   requiredSkillIds: z.array(z.string()),
+  subtasks: z.array(z.lazy(() => createTaskSchema)),
 });
+
+function updateTaskDraft(
+  task: TaskDraft,
+  taskId: string,
+  update: (task: TaskDraft) => TaskDraft,
+): TaskDraft {
+  if (task.localId === taskId) {
+    return update(task);
+  }
+
+  return {
+    ...task,
+    subtasks: task.subtasks.map((subtask) => updateTaskDraft(subtask, taskId, update)),
+  };
+}
+
+function removeTaskDraft(task: TaskDraft, taskId: string): TaskDraft {
+  return {
+    ...task,
+    subtasks: task.subtasks
+      .filter((subtask) => subtask.localId !== taskId)
+      .map((subtask) => removeTaskDraft(subtask, taskId)),
+  };
+}
+
+function toCreateTaskInput(task: TaskDraft): CreateTaskInput {
+  return {
+    title: task.title,
+    requiredSkillIds: task.requiredSkillIds,
+    subtasks: task.subtasks.map((subtask) => toCreateTaskInput(subtask)),
+  };
+}
 
 export function CreateTaskPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const skillsQuery = useQuery({ queryKey: ["skills"], queryFn: getSkills });
-  const form = useForm<CreateTaskInput>({
-    resolver: zodResolver(createTaskSchema),
-    defaultValues: {
-      title: "",
-      requiredSkillIds: [],
-    },
-  });
+  const [taskDraft, setTaskDraft] = useState(createEmptyTask);
+  const [validationError, setValidationError] = useState<string | null>(null);
 
   const createTaskMutation = useMutation({
     mutationFn: createTask,
@@ -32,8 +73,54 @@ export function CreateTaskPage() {
     },
   });
 
-  function onSubmit(input: CreateTaskInput) {
-    createTaskMutation.mutate(input);
+  function updateTask(taskId: string, changes: Pick<TaskDraft, "title" | "requiredSkillIds">) {
+    setValidationError(null);
+    setTaskDraft((currentTask) =>
+      updateTaskDraft(currentTask, taskId, (task) => ({ ...task, ...changes })),
+    );
+  }
+
+  function addSubtask(taskId: string) {
+    setTaskDraft((currentTask) =>
+      updateTaskDraft(currentTask, taskId, (task) => ({
+        ...task,
+        subtasks: [...task.subtasks, createEmptyTask()],
+      })),
+    );
+  }
+
+  function removeSubtask(taskId: string) {
+    setTaskDraft((currentTask) => removeTaskDraft(currentTask, taskId));
+  }
+
+  function submitTask() {
+    const input = toCreateTaskInput(taskDraft);
+    const result = createTaskSchema.safeParse(input);
+
+    if (!result.success) {
+      setValidationError(result.error.issues[0]?.message ?? "Check the task details.");
+      return;
+    }
+
+    setValidationError(null);
+    createTaskMutation.mutate(result.data);
+  }
+
+  function renderTaskForm(task: TaskDraft, depth: number, parentTitle?: string) {
+    return (
+      <Fragment key={task.localId}>
+        <TaskFormNode
+          task={task}
+          skills={skillsQuery.data ?? []}
+          depth={depth}
+          parentTitle={parentTitle}
+          onChange={(changes) => updateTask(task.localId, changes)}
+          onAddSubtask={() => addSubtask(task.localId)}
+          onRemove={() => removeSubtask(task.localId)}
+        />
+        {task.subtasks.map((subtask) => renderTaskForm(subtask, depth + 1, task.title))}
+      </Fragment>
+    );
   }
 
   if (skillsQuery.isPending) {
@@ -51,54 +138,32 @@ export function CreateTaskPage() {
   }
 
   return (
-    <section className="mx-auto max-w-2xl">
+    <section className="mx-auto max-w-3xl">
       <Link to="/tasks" className="text-sm font-medium text-blue-700 hover:text-blue-800">
         ← Back to tasks
       </Link>
       <div className="mt-5 rounded-lg border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
         <p className="text-sm font-medium text-blue-700">Task Assignment</p>
-        <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900">Create task</h1>
+        <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900">Create task(s)</h1>
         <p className="mt-2 text-sm text-slate-600">
-          Add a task title and the skills needed to complete it. You can assign someone later.
+          Add subtasks at any level. Every task and subtask can have its own required skills.
         </p>
 
-        <form className="mt-8 space-y-7" onSubmit={form.handleSubmit(onSubmit)} noValidate>
-          <div>
-            <label htmlFor="title" className="block text-sm font-semibold text-slate-800">
-              Task title
-            </label>
-            <textarea
-              id="title"
-              rows={4}
-              placeholder="For example: As a visitor, I want to see a responsive homepage..."
-              {...form.register("title")}
-              className="mt-2 block w-full rounded-md border border-slate-300 px-3 py-2.5 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-            />
-            {form.formState.errors.title ? (
-              <p className="mt-2 text-sm text-red-600">{form.formState.errors.title.message}</p>
-            ) : null}
-          </div>
+        <form
+          className="mt-8 space-y-6"
+          onSubmit={(event) => {
+            event.preventDefault();
+            submitTask();
+          }}
+          noValidate
+        >
+          {renderTaskForm(taskDraft, 0)}
 
-          <fieldset>
-            <legend className="text-sm font-semibold text-slate-800">Required skills</legend>
-            <p className="mt-1 text-sm text-slate-600">Select every skill this task needs.</p>
-            <div className="mt-3 grid gap-3 sm:grid-cols-2">
-              {skillsQuery.data.map((skill) => (
-                <label
-                  key={skill.id}
-                  className="flex cursor-pointer items-center gap-3 rounded-md border border-slate-200 px-4 py-3 text-sm text-slate-800 transition hover:border-blue-300 hover:bg-blue-50"
-                >
-                  <input
-                    type="checkbox"
-                    value={skill.id}
-                    {...form.register("requiredSkillIds")}
-                    className="size-4 rounded border-slate-300 text-blue-700 focus:ring-blue-500"
-                  />
-                  {skill.name}
-                </label>
-              ))}
-            </div>
-          </fieldset>
+          {validationError ? (
+            <p className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">
+              {validationError}
+            </p>
+          ) : null}
 
           {createTaskMutation.isError ? (
             <p className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">
