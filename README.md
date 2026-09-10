@@ -90,7 +90,7 @@ The frontend runs at `http://localhost:5173` and uses `http://localhost:3000` as
 
 ```mermaid
 flowchart LR
-  Browser --> Frontend[Nginx + React]
+  Browser --> Frontend[React]
   Frontend --> Backend[Express API]
   Backend --> Database[(PostgreSQL)]
   Backend --> Gemini[Gemini API]
